@@ -1,8 +1,8 @@
 package com.soumyajit.apigateway.service;
 
+import com.soumyajit.apigateway.config.JwtConfig;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -13,21 +13,19 @@ import java.util.List;
 @Service
 public class JwtService {
 
+    private final JwtConfig jwtConfig;
     private final SecretKey key;
-    private final long expirationMs;
 
     private static final String ISSUER = "apigateway";
     private static final String AUDIENCE = "users";
 
-    public JwtService(@Value("${jwt.secret}") String secret,
-                      @Value("${jwt.exp-ms:3600000}") long expirationMs) {
-
-        if (secret == null || secret.length() < 32) {
+    // Constructor: Spring injects JwtConfig here
+    public JwtService(JwtConfig jwtConfig) {
+        if (jwtConfig.getSecret() == null || jwtConfig.getSecret().length() < 32) {
             throw new IllegalArgumentException("JWT secret must be at least 32 characters");
         }
-
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.expirationMs = expirationMs;
+        this.jwtConfig = jwtConfig;
+        this.key = Keys.hmacShaKeyFor(jwtConfig.getSecret().getBytes(StandardCharsets.UTF_8));
     }
 
     public String generateToken(String username) {
@@ -37,10 +35,10 @@ public class JwtService {
                 .setSubject(username)
                 .setIssuer(ISSUER)
                 .setAudience(AUDIENCE)
-                .claim("roles", List.of("ROLE_USER")) // extend later
+                .claim("roles", List.of("ROLE_USER"))
                 .setIssuedAt(new Date(now))
-                .setExpiration(new Date(now + expirationMs))
-                .signWith(key)
+                .setExpiration(new Date(now + jwtConfig.getExpiration()))
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 

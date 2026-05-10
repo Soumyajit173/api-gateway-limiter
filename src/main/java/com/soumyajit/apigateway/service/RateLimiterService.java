@@ -2,56 +2,52 @@ package com.soumyajit.apigateway.service;
 
 import com.soumyajit.apigateway.model.RateLimitCounter;
 import com.soumyajit.apigateway.repository.RateLimitRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class RateLimiterService {
 
     private final RateLimitRepository repo;
+    private final long capacity;
+    private final long refillRate;
 
-    @Value("${ratelimit.capacity:100}")
-    private double capacity;
+    // Custom constructor for config injection
+    public RateLimiterService(RateLimitRepository repo, long capacity, long refillRate) {
+        this.repo = repo;
+        this.capacity = capacity;
+        this.refillRate = refillRate;
+    }
 
-    @Value("${ratelimit.refillPerMinute:100}")
-    private double refillPerMinute;
-
-
-    public synchronized boolean tryConsume(String key, int tokensToConsume) {
-        Optional<RateLimitCounter> opt = repo.findById(key);
+    public boolean tryConsume(String key) {
+        Optional<RateLimitCounter> opt = repo.findByKey(key);
         RateLimitCounter counter = opt.orElseGet(() -> RateLimitCounter.builder()
-                .id(key)
-                .tokens((long) capacity)
+                .key(key)
+                .tokens(capacity)
+                .capacity(capacity)
                 .lastRefill(Instant.now())
                 .build());
 
         refill(counter);
 
-        if (counter.getTokens() >= tokensToConsume) {
-            counter.setTokens(counter.getTokens() - tokensToConsume);
+        if (counter.getTokens() > 0) {
+            counter.setTokens(counter.getTokens() - 1);
             repo.save(counter);
             return true;
-        } else {
-            repo.save(counter);
-            return false;
         }
+
+        repo.save(counter);
+        return false;
     }
 
     private void refill(RateLimitCounter counter) {
-        Instant now = Instant.now();
-        long seconds = Duration.between(counter.getLastRefill(), now).getSeconds();
-        if (seconds <= 0) return;
-        double tokensToAdd = (refillPerMinute / 60.0) * seconds;
-        double newTokens = Math.min(capacity, counter.getTokens() + tokensToAdd);
-        counter.setTokens((long) newTokens);
-        counter.setLastRefill(now);
+        long elapsedSeconds = (Instant.now().getEpochSecond() - counter.getLastRefill().getEpochSecond());
+        long tokensToAdd = elapsedSeconds * refillRate;
+        if (tokensToAdd > 0) {
+            counter.setTokens(Math.min(counter.getCapacity(), counter.getTokens() + tokensToAdd));
+            counter.setLastRefill(Instant.now());
+        }
     }
 }
