@@ -14,7 +14,6 @@ public class RateLimiterService {
     private final long capacity;
     private final long refillRate;
 
-    // Custom constructor for config injection
     public RateLimiterService(RateLimitRepository repo, long capacity, long refillRate) {
         this.repo = repo;
         this.capacity = capacity;
@@ -23,12 +22,18 @@ public class RateLimiterService {
 
     public boolean tryConsume(String key) {
         Optional<RateLimitCounter> opt = repo.findByKey(key);
-        RateLimitCounter counter = opt.orElseGet(() -> RateLimitCounter.builder()
-                .key(key)
-                .tokens(capacity)
-                .capacity(capacity)
-                .lastRefill(Instant.now())
-                .build());
+
+        RateLimitCounter counter;
+        if (opt.isPresent()) {
+            counter = opt.get();
+        } else {
+            // REFACTORED: Manual instantiation instead of Builder
+            counter = new RateLimitCounter();
+            counter.setKey(key);
+            counter.setTokens(capacity);
+            counter.setCapacity(capacity);
+            counter.setLastRefill(Instant.now());
+        }
 
         refill(counter);
 
@@ -45,8 +50,10 @@ public class RateLimiterService {
     private void refill(RateLimitCounter counter) {
         long elapsedSeconds = (Instant.now().getEpochSecond() - counter.getLastRefill().getEpochSecond());
         long tokensToAdd = elapsedSeconds * refillRate;
+
         if (tokensToAdd > 0) {
-            counter.setTokens(Math.min(counter.getCapacity(), counter.getTokens() + tokensToAdd));
+            long newTokens = Math.min(counter.getCapacity(), counter.getTokens() + tokensToAdd);
+            counter.setTokens(newTokens);
             counter.setLastRefill(Instant.now());
         }
     }

@@ -1,7 +1,7 @@
 package com.soumyajit.apigateway.filter;
 
 import com.soumyajit.apigateway.model.ApiLog;
-import com.soumyajit.apigateway.repository.ApiLogRepository;
+import com.soumyajit.apigateway.service.LoggingService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,17 +11,18 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Enumeration;
+import java.util.Collections;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Component
 public class LoggingFilter extends OncePerRequestFilter {
 
-    private final ApiLogRepository apiLogRepository;
+    private final LoggingService loggingService;
 
-    public LoggingFilter(ApiLogRepository apiLogRepository) {
-        this.apiLogRepository = apiLogRepository;
+    // Injecting the Service instead of the Repository for cleaner architecture
+    public LoggingFilter(LoggingService loggingService) {
+        this.loggingService = loggingService;
     }
 
     @Override
@@ -31,25 +32,25 @@ public class LoggingFilter extends OncePerRequestFilter {
 
         long start = System.currentTimeMillis();
 
+        // 1. Let the request proceed
         filterChain.doFilter(request, response);
+
+        // 2. Calculate metrics after the response is generated
         long duration = System.currentTimeMillis() - start;
 
-        ApiLog log = ApiLog.builder()
-                .timestamp(Instant.now())
-                .method(request.getMethod())
-                .path(request.getRequestURI())
-                .clientIp(getClientIp(request))
-                .username(getUsername())
-                .status(response.getStatus())
-                .durationMs(duration)
-                .headers(extractHeaders(request))
-                .build();
+        // 3. THE FIX: Standard POJO instantiation instead of Builder
+        ApiLog log = new ApiLog();
+        log.setTimestamp(Instant.now());
+        log.setMethod(request.getMethod());
+        log.setPath(request.getRequestURI());
+        log.setClientIp(getClientIp(request));
+        log.setUsername(getUsername());
+        log.setStatus(response.getStatus());
+        log.setDurationMs(duration);
+        log.setHeaders(extractHeaders(request));
 
-        try {
-            apiLogRepository.save(log);
-        } catch (Exception e) {
-            logger.warn("Failed to save api log", e);
-        }
+        // 4. Delegate saving (preferably using the @Async save we configured)
+        loggingService.save(log);
     }
 
     private String getClientIp(HttpServletRequest req) {
@@ -62,13 +63,17 @@ public class LoggingFilter extends OncePerRequestFilter {
 
     private String getUsername() {
         var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) return null;
+        if (auth == null || !auth.isAuthenticated()) return "anonymous";
         return auth.getName();
     }
 
     private Map<String, String> extractHeaders(HttpServletRequest req) {
-        return java.util.Collections.list(req.getHeaderNames())
+        return Collections.list(req.getHeaderNames())
                 .stream()
-                .collect(Collectors.toMap(h -> h, req::getHeader));
+                .collect(Collectors.toMap(
+                        h -> h,
+                        req::getHeader,
+                        (existing, replacement) -> existing // Handle duplicate headers if any
+                ));
     }
 }

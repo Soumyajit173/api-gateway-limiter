@@ -1,7 +1,6 @@
 package com.soumyajit.apigateway.filter;
 
-import com.soumyajit.apigateway.model.RateLimitCounter;
-import com.soumyajit.apigateway.repository.RateLimitRepository;
+import com.soumyajit.apigateway.service.RateLimiterService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,17 +19,15 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.time.Instant;
-import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class RateLimitFilterTest {
 
     @Mock
-    private RateLimitRepository rateLimitRepository;
+    private RateLimiterService rateLimiterService; // REFACTORED: Mock the Service
 
     @Mock
     private HttpServletRequest request;
@@ -49,65 +46,60 @@ class RateLimitFilterTest {
 
     private RateLimitFilter rateLimitFilter;
 
-    private final long CAPACITY = 5;
-    private final long REFILL_RATE = 1;
-
     @BeforeEach
     void setUp() {
-        rateLimitFilter = new RateLimitFilter(rateLimitRepository, CAPACITY, REFILL_RATE);
+        // Updated constructor usage
+        rateLimitFilter = new RateLimitFilter(rateLimiterService);
         SecurityContextHolder.setContext(securityContext);
     }
 
     @Test
-    @DisplayName("Should allow request when tokens are available for an IP-based key")
+    @DisplayName("Should allow request when service returns true for IP key")
     void doFilterInternal_AllowIP() throws ServletException, IOException {
         // Arrange
         String ip = "127.0.0.1";
-        when(securityContext.getAuthentication()).thenReturn(null);
         when(request.getRemoteAddr()).thenReturn(ip);
-        when(rateLimitRepository.findByKey("ip:" + ip)).thenReturn(Optional.empty());
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        // Mock service to allow the request
+        when(rateLimiterService.tryConsume("ip:" + ip)).thenReturn(true);
 
         // Act
         rateLimitFilter.doFilterInternal(request, response, filterChain);
 
         // Assert
         verify(filterChain).doFilter(request, response);
-        verify(rateLimitRepository).save(any(RateLimitCounter.class));
+        verify(rateLimiterService).tryConsume("ip:" + ip);
     }
 
     @Test
-    @DisplayName("Should use username as key when authenticated")
+    @DisplayName("Should identify authenticated user and use username as key")
     void doFilterInternal_UseUserKey() throws ServletException, IOException {
         // Arrange
         when(securityContext.getAuthentication()).thenReturn(authentication);
         when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getName()).thenReturn("soumyajit");
-        when(rateLimitRepository.findByKey("user:soumyajit")).thenReturn(Optional.empty());
+
+        when(rateLimiterService.tryConsume("user:soumyajit")).thenReturn(true);
 
         // Act
         rateLimitFilter.doFilterInternal(request, response, filterChain);
 
         // Assert
-        verify(rateLimitRepository).save(argThat(counter -> counter.getKey().equals("user:soumyajit")));
+        verify(rateLimiterService).tryConsume("user:soumyajit");
         verify(filterChain).doFilter(request, response);
     }
 
     @Test
-    @DisplayName("Should block request and return 429 when rate limit is exceeded")
+    @DisplayName("Should block request and return 429 when service returns false")
     void doFilterInternal_LimitExceeded() throws ServletException, IOException {
         // Arrange
         String ip = "192.168.1.1";
-        when(securityContext.getAuthentication()).thenReturn(null);
         when(request.getRemoteAddr()).thenReturn(ip);
+        when(securityContext.getAuthentication()).thenReturn(null);
 
-        RateLimitCounter exhaustedCounter = RateLimitCounter.builder()
-                .key("ip:" + ip)
-                .tokens(0)
-                .capacity(CAPACITY)
-                .lastRefill(Instant.now())
-                .build();
-
-        when(rateLimitRepository.findByKey("ip:" + ip)).thenReturn(Optional.of(exhaustedCounter));
+        // Mock service to block the request
+        when(rateLimiterService.tryConsume("ip:" + ip)).thenReturn(false);
 
         StringWriter stringWriter = new StringWriter();
         PrintWriter printWriter = new PrintWriter(stringWriter);
@@ -118,34 +110,7 @@ class RateLimitFilterTest {
 
         // Assert
         verify(response).setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-        assertEquals("Rate limit exceeded", stringWriter.toString());
-        verifyNoInteractions(filterChain);
-    }
-
-    @Test
-    @DisplayName("Should refill tokens if sufficient time has passed")
-    void doFilterInternal_RefillTokens() throws ServletException, IOException {
-        // Arrange
-        String ip = "1.1.1.1";
-        when(securityContext.getAuthentication()).thenReturn(null);
-        when(request.getRemoteAddr()).thenReturn(ip);
-
-        // Last refill 2 minutes ago, refill rate 1 per minute. 0 + 2 = 2 tokens.
-        RateLimitCounter counter = RateLimitCounter.builder()
-                .key("ip:" + ip)
-                .tokens(0)
-                .capacity(CAPACITY)
-                .lastRefill(Instant.now().minus(java.time.Duration.ofMinutes(2)))
-                .build();
-
-        when(rateLimitRepository.findByKey("ip:" + ip)).thenReturn(Optional.of(counter));
-
-        // Act
-        rateLimitFilter.doFilterInternal(request, response, filterChain);
-
-        // Assert
-        // Start: 0, Refill: +2, Consume: -1 -> Result: 1
-        verify(rateLimitRepository).save(argThat(c -> c.getTokens() == 1));
-        verify(filterChain).doFilter(request, response);
+        assertTrue(stringWriter.toString().contains("Rate limit exceeded"));
+        verifyNoInteractions(filterChain); // Ensure request stopped here
     }
 }

@@ -26,13 +26,13 @@ class LoggingServiceTest {
     @DisplayName("Should successfully delegate log saving to the repository")
     void save_Success() {
         // Arrange
-        ApiLog log = ApiLog.builder()
-                .path("/api/test")
-                .method("GET")
-                .status(200)
-                .clientIp("127.0.0.1")
-                .timestamp(Instant.now())
-                .build();
+        // REFACTORED: Manual instantiation instead of Builder
+        ApiLog log = new ApiLog();
+        log.setPath("/api/test");
+        log.setMethod("GET");
+        log.setStatus(200);
+        log.setClientIp("127.0.0.1");
+        log.setTimestamp(Instant.now());
 
         // Act
         loggingService.save(log);

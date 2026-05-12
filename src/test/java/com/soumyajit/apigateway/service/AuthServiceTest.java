@@ -13,6 +13,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,11 +50,12 @@ class AuthServiceTest {
             when(userRepository.existsByUsername(username)).thenReturn(false);
             when(passwordEncoder.encode(password)).thenReturn(hashedPassword);
 
-            User savedUser = User.builder()
-                    .username(username)
-                    .password(hashedPassword)
-                    .displayName(displayName)
-                    .build();
+            // REFACTORED: Manual instantiation instead of Builder
+            User savedUser = new User();
+            savedUser.setUsername(username);
+            savedUser.setPassword(hashedPassword);
+            savedUser.setDisplayName(displayName);
+            savedUser.setRoles(Set.of("ROLE_USER"));
 
             when(userRepository.save(any(User.class))).thenReturn(savedUser);
 
@@ -96,11 +98,18 @@ class AuthServiceTest {
             // Arrange
             String username = "user";
             String rawPassword = "password";
-            User user = User.builder().username(username).password("hashed").build();
+
+            // REFACTORED: Manual instantiation
+            User user = new User();
+            user.setUsername(username);
+            user.setPassword("hashed");
+            user.setRoles(Set.of("ROLE_USER"));
 
             when(userRepository.findByUsername(username)).thenReturn(Optional.of(user));
             when(passwordEncoder.matches(rawPassword, "hashed")).thenReturn(true);
-            when(jwtService.generateToken(username)).thenReturn("mock-jwt-token");
+
+            // Note: Updated to match the new JwtService.generateToken signature (username, roles)
+            when(jwtService.generateToken(eq(username), anyCollection())).thenReturn("mock-jwt-token");
 
             // Act
             String token = authService.authenticateAndGetToken(username, rawPassword);
@@ -112,7 +121,10 @@ class AuthServiceTest {
         @Test
         @DisplayName("Should return null when password does not match")
         void authenticate_WrongPassword() {
-            User user = User.builder().username("user").password("hashed").build();
+            User user = new User();
+            user.setUsername("user");
+            user.setPassword("hashed");
+
             when(userRepository.findByUsername("user")).thenReturn(Optional.of(user));
             when(passwordEncoder.matches("wrong", "hashed")).thenReturn(false);
 
@@ -129,15 +141,22 @@ class AuthServiceTest {
         @Test
         @DisplayName("Should load UserDetails when user exists")
         void loadUser_Success() {
-            User user = User.builder().username("user").password("hashed").build();
+            User user = new User();
+            user.setUsername("user");
+            user.setPassword("hashed");
+            user.setRoles(Set.of("ROLE_USER", "ROLE_ADMIN"));
+
             when(userRepository.findByUsername("user")).thenReturn(Optional.of(user));
 
             UserDetails details = authService.loadUserByUsername("user");
 
             assertNotNull(details);
             assertEquals("user", details.getUsername());
+            // Verify that multiple roles are correctly mapped to authorities
             assertTrue(details.getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().equals("USER")));
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_USER")));
+            assertTrue(details.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
         }
 
         @Test

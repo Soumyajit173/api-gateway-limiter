@@ -6,11 +6,14 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Instant;
+import java.util.Set;
 
 @SpringBootApplication
+@EnableAsync // Added to support the non-blocking LoggingService we built
 public class ApiGatewayApplication {
 
     public static void main(String[] args) {
@@ -19,29 +22,29 @@ public class ApiGatewayApplication {
 
     /**
      * Seeds the initial administrator user if it doesn't exist.
-     * Wrapped in a try-catch to prevent startup failure if MongoDB
-     * is temporarily unreachable during the deployment window.
      */
     @Bean
     CommandLineRunner seed(UserRepository repo, PasswordEncoder encoder) {
         return args -> {
             try {
                 if (!repo.existsByUsername("admin")) {
-                    User admin = User.builder()
-                            .username("admin")
-                            .password(encoder.encode("adminpass"))
-                            .displayName("Administrator")
-                            .createdAt(Instant.now())
-                            .build();
+                    // THE FIX: Standard POJO instantiation instead of Builder
+                    User admin = new User();
+                    admin.setUsername("admin");
+                    admin.setPassword(encoder.encode("adminpass"));
+                    admin.setDisplayName("Administrator");
+                    admin.setCreatedAt(Instant.now());
+
+                    // Critical: Give the admin proper roles
+                    admin.setRoles(Set.of("ROLE_USER", "ROLE_ADMIN"));
 
                     repo.save(admin);
-                    System.out.println(">> Database Seeded: Admin user created.");
+                    System.out.println(">> Database Seeded: Admin user created with ROLE_ADMIN.");
                 } else {
                     System.out.println(">> Database Check: Admin user already exists.");
                 }
             } catch (Exception e) {
-                // Log the error but allow the application to finish starting up.
-                // This prevents the 502 Bad Gateway on Render.
+                // Log the error but allow application startup to continue
                 System.err.println(">> Seed Warning: Could not connect to DB during startup: " + e.getMessage());
             }
         };

@@ -2,7 +2,6 @@ package com.soumyajit.apigateway.controller;
 
 import com.soumyajit.apigateway.model.ApiLog;
 import com.soumyajit.apigateway.repository.ApiLogRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -12,10 +11,13 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/admin")
-@RequiredArgsConstructor
 public class AdminController {
 
     private final ApiLogRepository apiLogRepository;
+
+    public AdminController(ApiLogRepository apiLogRepository) {
+        this.apiLogRepository = apiLogRepository;
+    }
 
     @GetMapping("/logs")
     public ResponseEntity<?> listLogs(@RequestParam(defaultValue = "0") int page,

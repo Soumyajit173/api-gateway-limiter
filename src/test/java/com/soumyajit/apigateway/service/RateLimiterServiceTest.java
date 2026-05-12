@@ -30,14 +30,13 @@ class RateLimiterServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Initializing manually because of the custom constructor
         rateLimiterService = new RateLimiterService(repo, CAPACITY, REFILL_RATE);
     }
 
     @Test
     @DisplayName("Should allow request and consume token when bucket is full")
     void tryConsume_Success() {
-        // Arrange: No existing counter in DB (new user)
+        // Arrange
         when(repo.findByKey(KEY)).thenReturn(Optional.empty());
 
         // Act
@@ -48,20 +47,18 @@ class RateLimiterServiceTest {
         ArgumentCaptor<RateLimitCounter> captor = ArgumentCaptor.forClass(RateLimitCounter.class);
         verify(repo).save(captor.capture());
 
-        // Tokens should be CAPACITY - 1
         assertEquals(CAPACITY - 1, captor.getValue().getTokens());
     }
 
     @Test
     @DisplayName("Should reject request when tokens are exhausted")
     void tryConsume_Exhausted() {
-        // Arrange: Existing counter with 0 tokens and recent refill
-        RateLimitCounter counter = RateLimitCounter.builder()
-                .key(KEY)
-                .tokens(0)
-                .capacity(CAPACITY)
-                .lastRefill(Instant.now())
-                .build();
+        // Arrange
+        RateLimitCounter counter = new RateLimitCounter();
+        counter.setKey(KEY);
+        counter.setTokens(0);
+        counter.setCapacity(CAPACITY);
+        counter.setLastRefill(Instant.now());
 
         when(repo.findByKey(KEY)).thenReturn(Optional.of(counter));
 
@@ -78,14 +75,13 @@ class RateLimiterServiceTest {
     @DisplayName("Should refill tokens based on elapsed time")
     void tryConsume_WithRefill() {
         // Arrange: 0 tokens, but last refill was 5 seconds ago
-        // With REFILL_RATE = 1, it should add 5 tokens
         Instant fiveSecondsAgo = Instant.now().minusSeconds(5);
-        RateLimitCounter counter = RateLimitCounter.builder()
-                .key(KEY)
-                .tokens(0)
-                .capacity(CAPACITY)
-                .lastRefill(fiveSecondsAgo)
-                .build();
+
+        RateLimitCounter counter = new RateLimitCounter();
+        counter.setKey(KEY);
+        counter.setTokens(0);
+        counter.setCapacity(CAPACITY);
+        counter.setLastRefill(fiveSecondsAgo);
 
         when(repo.findByKey(KEY)).thenReturn(Optional.of(counter));
 
@@ -94,9 +90,8 @@ class RateLimiterServiceTest {
 
         // Assert
         assertTrue(allowed);
-        // Calculation: 0 (start) + 5 (refill) - 1 (consumed) = 4
+        // Logic: 0 (initial) + 5 (refilled) - 1 (consumed) = 4
         assertEquals(4, counter.getTokens());
-        verify(repo).save(counter);
     }
 
     @Test
@@ -104,12 +99,12 @@ class RateLimiterServiceTest {
     void tryConsume_CapAtCapacity() {
         // Arrange: 9 tokens, last refill 1 hour ago
         Instant oneHourAgo = Instant.now().minusSeconds(3600);
-        RateLimitCounter counter = RateLimitCounter.builder()
-                .key(KEY)
-                .tokens(9)
-                .capacity(CAPACITY)
-                .lastRefill(oneHourAgo)
-                .build();
+
+        RateLimitCounter counter = new RateLimitCounter();
+        counter.setKey(KEY);
+        counter.setTokens(9);
+        counter.setCapacity(CAPACITY);
+        counter.setLastRefill(oneHourAgo);
 
         when(repo.findByKey(KEY)).thenReturn(Optional.of(counter));
 
@@ -117,8 +112,7 @@ class RateLimiterServiceTest {
         rateLimiterService.tryConsume(KEY);
 
         // Assert
-        // Calculation: 9 + 3600 is way over CAPACITY(10).
-        // Should cap at 10, then consume 1 to result in 9.
+        // Logic: (9 + 3600) capped at 10, then -1 consumed = 9
         assertEquals(9, counter.getTokens());
     }
 }

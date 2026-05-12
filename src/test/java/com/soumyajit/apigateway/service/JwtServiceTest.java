@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -27,12 +28,10 @@ class JwtServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Using lenient() here prevents UnnecessaryStubbingException
-        // when tests like constructor_InvalidSecret use their own local mocks instead.
+        // Using lenient() to allow specific tests to override or ignore these stubs
         lenient().when(jwtConfig.getSecret()).thenReturn(VALID_SECRET);
         lenient().when(jwtConfig.getExpiration()).thenReturn(EXPIRATION);
 
-        // Initialize for the "Happy Path" tests
         jwtService = new JwtService(jwtConfig);
     }
 
@@ -46,11 +45,16 @@ class JwtServiceTest {
     }
 
     @Test
-    @DisplayName("Should generate a valid JWT token")
+    @DisplayName("Should generate a valid JWT token with roles")
     void generateToken_Success() {
+        // Arrange
         String username = "testUser";
-        String token = jwtService.generateToken(username);
+        Set<String> roles = Set.of("ROLE_USER", "ROLE_ADMIN");
 
+        // Act
+        String token = jwtService.generateToken(username, roles);
+
+        // Assert
         assertNotNull(token);
         assertFalse(token.isEmpty());
     }
@@ -58,11 +62,14 @@ class JwtServiceTest {
     @Test
     @DisplayName("Should validate token and return correct username")
     void validateAndGetUser_Success() {
+        // Arrange
         String username = "soumyajit";
-        String token = jwtService.generateToken(username);
+        String token = jwtService.generateToken(username, Set.of("ROLE_USER"));
 
+        // Act
         String extractedUser = jwtService.validateAndGetUser(token);
 
+        // Assert
         assertEquals(username, extractedUser);
     }
 
@@ -75,13 +82,19 @@ class JwtServiceTest {
     }
 
     @Test
-    @DisplayName("Should extract roles from token")
-    @SuppressWarnings("unchecked")
+    @DisplayName("Should extract specific roles from token")
     void getRoles_Success() {
-        String token = jwtService.generateToken("user123");
+        // Arrange
+        Set<String> expectedRoles = Set.of("ROLE_ADMIN", "ROLE_USER");
+        String token = jwtService.generateToken("user123", expectedRoles);
+
+        // Act
         List<String> roles = jwtService.getRoles(token);
 
+        // Assert
         assertNotNull(roles);
+        assertEquals(2, roles.size());
+        assertTrue(roles.contains("ROLE_ADMIN"));
         assertTrue(roles.contains("ROLE_USER"));
     }
 }

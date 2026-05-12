@@ -1,19 +1,14 @@
 package com.soumyajit.apigateway.controller;
 
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.Enumeration;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/gateway")
-@RequiredArgsConstructor
 public class GatewayController {
 
     @GetMapping("/hello")

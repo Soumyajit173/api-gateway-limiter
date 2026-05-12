@@ -1,7 +1,7 @@
 package com.soumyajit.apigateway.filter;
 
 import com.soumyajit.apigateway.model.ApiLog;
-import com.soumyajit.apigateway.repository.ApiLogRepository;
+import com.soumyajit.apigateway.service.LoggingService; // Updated import
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,7 +28,7 @@ import static org.mockito.Mockito.*;
 class LoggingFilterTest {
 
     @Mock
-    private ApiLogRepository apiLogRepository;
+    private LoggingService loggingService; // REFACTORED: Mock the Service, not the Repository
 
     @Mock
     private HttpServletRequest request;
@@ -49,7 +49,8 @@ class LoggingFilterTest {
 
     @BeforeEach
     void setUp() {
-        loggingFilter = new LoggingFilter(apiLogRepository);
+        // Updated to use the service
+        loggingFilter = new LoggingFilter(loggingService);
         SecurityContextHolder.setContext(securityContext);
     }
 
@@ -65,16 +66,13 @@ class LoggingFilterTest {
         when(request.getRequestURI()).thenReturn(path);
         when(request.getMethod()).thenReturn(method);
         when(request.getRemoteAddr()).thenReturn(clientIp);
-
-        // FIX: Stub X-Forwarded-For to return null so it falls back to RemoteAddr
         when(request.getHeader("X-Forwarded-For")).thenReturn(null);
-
         when(request.getHeaderNames()).thenReturn(Collections.enumeration(List.of("User-Agent")));
         when(request.getHeader("User-Agent")).thenReturn("JUnit-Test");
 
         when(response.getStatus()).thenReturn(status);
-
         when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getName()).thenReturn("test-user");
 
         // Act
@@ -83,11 +81,16 @@ class LoggingFilterTest {
         // Assert
         verify(filterChain).doFilter(request, response);
         ArgumentCaptor<ApiLog> logCaptor = ArgumentCaptor.forClass(ApiLog.class);
-        verify(apiLogRepository).save(logCaptor.capture());
+
+        // REFACTORED: Verify call to loggingService
+        verify(loggingService).save(logCaptor.capture());
 
         ApiLog capturedLog = logCaptor.getValue();
         assertEquals(path, capturedLog.getPath());
+        assertEquals(method, capturedLog.getMethod());
         assertEquals("192.168.1.1", capturedLog.getClientIp());
+        assertEquals("test-user", capturedLog.getUsername());
+        assertEquals(status, capturedLog.getStatus());
     }
 
     @Test
@@ -96,25 +99,28 @@ class LoggingFilterTest {
         // Arrange
         when(request.getHeader("X-Forwarded-For")).thenReturn("10.0.0.5, 127.0.0.1");
         when(request.getHeaderNames()).thenReturn(Collections.emptyEnumeration());
+        when(securityContext.getAuthentication()).thenReturn(null);
 
         // Act
         loggingFilter.doFilterInternal(request, response, filterChain);
 
         // Assert
         ArgumentCaptor<ApiLog> logCaptor = ArgumentCaptor.forClass(ApiLog.class);
-        verify(apiLogRepository).save(logCaptor.capture());
+        verify(loggingService).save(logCaptor.capture());
         assertEquals("10.0.0.5", logCaptor.getValue().getClientIp());
     }
 
     @Test
-    @DisplayName("Should handle repository failure gracefully without crashing the request")
+    @DisplayName("Should handle logging service failure gracefully")
     void doFilterInternal_ShouldHandleSaveException() throws ServletException, IOException {
         // Arrange
         when(request.getHeaderNames()).thenReturn(Collections.emptyEnumeration());
-        doThrow(new RuntimeException("DB Down")).when(apiLogRepository).save(any(ApiLog.class));
+
+        // Mock the service to throw an exception
+        doThrow(new RuntimeException("Logging Service Down")).when(loggingService).save(any(ApiLog.class));
 
         // Act & Assert
-        // The filter should NOT throw an exception because of the try-catch block
+        // The filter should NOT throw an exception because of the try-catch inside the service/filter
         assertDoesNotThrow(() -> loggingFilter.doFilterInternal(request, response, filterChain));
 
         // Ensure the request still went through

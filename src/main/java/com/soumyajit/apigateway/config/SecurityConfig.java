@@ -1,12 +1,11 @@
 package com.soumyajit.apigateway.config;
 
 import com.soumyajit.apigateway.filter.JwtAuthenticationFilter;
-import com.soumyajit.apigateway.filter.RateLimitFilter;
 import com.soumyajit.apigateway.filter.LoggingFilter;
+import com.soumyajit.apigateway.filter.RateLimitFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
