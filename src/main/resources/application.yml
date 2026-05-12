@@ -1,6 +1,6 @@
 spring:
   data:
-  mongodb:
+    mongodb:
       uri: ${MONGO_URI:mongodb://localhost:27017/apigateway}
   main:
     allow-bean-definition-overriding: true
@@ -8,14 +8,22 @@ spring:
 server:
   port: ${PORT:8080}
 
-jwt:
-  secret: ${JWT_SECRET:change_this_to_env_secret}
-  exp-ms: ${JWT_EXP_MS:3600000}
+# Root 'app' configuration
+app:
+  name: api-gateway
+  description: API Gateway for demo
+  version: 0.0.1
 
-ratelimit:
-  capacity: ${RATE_LIMIT_CAPACITY:100}
-  refillPerMinute: ${RATE_LIMIT_REFILL:100}
+  # Matches @ConfigurationProperties(prefix = "app.jwt")
+  jwt:
+    # This long default ensures the 32-character validation passes in the terminal
+    secret: ${JWT_SECRET:dev_default_secret_key_for_api_gateway_must_be_at_least_32_chars}
+    expiration: ${JWT_EXP_MS:3600000}
 
+  # Matches @ConfigurationProperties(prefix = "app.ratelimit")
+  ratelimit:
+    capacity: ${RATE_LIMIT_CAPACITY:100}
+    refill: ${RATE_LIMIT_REFILL:100}
 
 logging:
   level:
@@ -31,7 +39,6 @@ management:
     health:
       show-details: always
 
-
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -39,12 +46,3 @@ springdoc:
     path: /swagger-ui/index.html
     operationsSorter: alpha
     tagsSorter: alpha
-
-
-app:
-  name: api-gateway
-  description: API Gateway for demo
-  version: 0.0.1
-
-
-
